@@ -6,17 +6,19 @@ project(${PROJECT_NAME})
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
-# C++17 support check
-#include(CheckCXXCompilerFlag)
 
-#check_cxx_compiler_flag("-std=c++17" COMPILER_SUPPORTS_CXX17)
-
-#if(NOT COMPILER_SUPPORTS_CXX17)
-  #message(FATAL_ERROR "C++")
-#endif()
 # Linux check
 if (NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
   message(FATAL_ERROR "Linux only. Curr system: ${CMAKE_SYSTEM_NAME}")
 endif()
+
+# Set build type if not specified
+if(NOT CMAKE_BUILD_TYPE)
+  set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose the type of build." FORCE)
+endif()
+
+# Compiler flags for Debug and Release
+set(CMAKE_CXX_FLAGS_DEBUG "-g -O0")
+set(CMAKE_CXX_FLAGS_RELEASE "-O3")
 
 add_executable(Webber webserver.cpp)

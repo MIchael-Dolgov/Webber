@@ -1,362 +1,343 @@
 #include <iostream>
+#include <string>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 #include <sys/socket.h>
 #include <sys/types.h>
-#include <string.h>
-#include <errno.h>
+#include <unistd.h>
+#include <exception>
 #include <netdb.h>
-#include <sys/wait.h>
-#include <signal.h>
-#include <set>
-#include <thread>
-#include <mutex>
+#include <cstring>
+#include <memory>
 
-#define DEFAUL_HTTP_REQUEST_LENGHT 1024
+#define HTTP_MAX_SOCKET_REQUESTS_CAPACITY 10u
+#define DEFAULT_HTTP_REQUEST_SIZE 512u
+#define FAILED -1
 
-class SingleListener 
+namespace sockets
 {
+    // identify IP type
+    bool is_IPv6(struct sockaddr *sa)
+    {
+        if (sa->sa_family == AF_INET6)
+            return true;
+        return false;
+    }
+
+    // get printable IP address (IPv4 or IPv6) as std::string
+    std::string get_printable_ip(struct sockaddr *sa) noexcept(true)
+    {
+        char ipstr[INET6_ADDRSTRLEN];
+        void *addr;
+        if (!is_IPv6(sa))
+        {
+            addr = &(((struct sockaddr_in *)sa)->sin_addr);
+        }
+        else
+        {
+            addr = &(((struct sockaddr_in6 *)sa)->sin6_addr);
+        }
+        inet_ntop(sa->sa_family, addr, ipstr, sizeof(ipstr));
+        return std::string(ipstr);
+    }
+
+    // get printable Port
+    in_port_t get_in_port(struct sockaddr *sa) noexcept(true)
+    {
+        if (!is_IPv6(sa))
+        {
+            return (((struct sockaddr_in *)sa)->sin_port);
+        }
+        return (((struct sockaddr_in6 *)sa)->sin6_port);
+    }
+
+    /**
+     * static class
+     * Listen socket. Program handling only one opened listening socket for
+     * incoming requests
+     */
+    class SocketListener
+    {
+    private:
+        SocketListener() = default;
+        SocketListener(const SocketListener &) = delete;
+        SocketListener &operator=(const SocketListener &) = delete;
+        ~SocketListener() = default;
+
+        // config
+        static struct addrinfo hints;
+        static bool configured_;
+        static bool opened_;
+        static int listener_fd_;
+        static uint conns_amount_;
+        static std::string listener_host_, listener_port_;
+
+        void initialize()
+        {
+            if (configured_ != true)
+            {
+                throw std::runtime_error("socket not configured");
+            }
+            // Listener init
+            struct addrinfo *listener_res, *p;
+            int sockStatus = getaddrinfo(listener_host_.c_str(),
+                listener_port_.c_str(), &hints, &listener_res);
+            int yes = 1;
+            if (sockStatus != 0)
+            {
+                std::cerr << "getaddrinfo error: "
+                          << gai_strerror(sockStatus) << "\n";
+                throw std::runtime_error("initialization failed");
+            }
+
+            // Try to create listener server socket on TCP/IP
+            for (p = listener_res; p != NULL; p = p->ai_next)
+            {
+                if ((listener_fd_ = socket(p->ai_family, p->ai_socktype,
+                    p->ai_protocol)) == FAILED)
+                {
+                    std::cerr << "server: failed to create new socket, "
+                        << "trying next option\n";
+                    continue;
+                }
+
+                if (setsockopt(listener_fd_, SOL_SOCKET, SO_REUSEADDR, &yes,
+                    sizeof(yes)) == FAILED)
+                {
+                    close(listener_fd_);
+                    std::cerr << "server: failed to set socket options, "
+                        << "trying next option\n";
+                    continue;
+                }
+
+                if (bind(listener_fd_, p->ai_addr, p->ai_addrlen) == FAILED)
+                {
+                    close(listener_fd_);
+                    std::cerr << "server: failed to bind new socket,"
+                        << " trying next option\n";
+                    continue;
+                }
+
+                break; // success
+            }
+            freeaddrinfo(listener_res); // all done with this structure
+
+            if (p == NULL)
+            {
+                std::cerr << "server: failed to bind \n";
+                throw std::runtime_error("listener socket has not been created");
+            }
+        }
+
     public:
-        // Singleton
-        static SingleListener *CreateInstance(const char *host, const char *port, addrinfo hints)
+        static SocketListener &instance() noexcept(true)
         {
-            if (pinstance_ == nullptr)
+            static SocketListener single_instance;
+            return single_instance;
+        }
+
+        static int GetListenerDescriptor() noexcept(true)
+        {
+            if (configured_)
+                return listener_fd_;
+            return FAILED;
+        }
+
+        void configure(uint conns, const std::string &host, const std::string &port,
+            int ai_family = AF_UNSPEC, int ai_socktype = SOCK_STREAM,
+            int ai_protocol = 0, int ai_flags = AI_PASSIVE)
+        {
+            if (configured_)
             {
-                pinstance_ = new SingleListener(host, port, hints);
+                throw std::runtime_error("SocketListener already configured");
             }
-            return pinstance_;
+
+            memset(&hints, 0, sizeof(hints));
+            hints.ai_family = ai_family;
+            hints.ai_socktype = ai_socktype;
+            hints.ai_protocol = ai_protocol;
+            hints.ai_flags = ai_flags;
+            conns_amount_ = conns;
+            listener_host_ = host;
+            listener_port_ = port;
+            // conf complete
+            configured_ = true;
         }
-        static SingleListener *GetInstance()
+
+        // request to open list sock from Linux Kernel
+        void startListen()
         {
-            if (pinstance_ == nullptr)
+            initialize();
+            if (listen(listener_fd_, conns_amount_) == FAILED)
             {
-                throw std::runtime_error("Something went wrong");
-            }
-            return pinstance_;
-        }
-        static int GetListenerDescriptor() 
-        {
-            return listener_fd_;
-        }
-                void StartListen(uint conns_amount) {
-            if (listen(listener_fd_, conns_amount) == -1) 
-            {
-                perror("server: listen");
+                std::cerr << "server: failed to open listening socket" << "\n";
                 close(listener_fd_);
-                exit(EXIT_FAILURE);
+                throw std::runtime_error("failed to open");
             }
 
             // success
             std::cout << "\033[1;32m";
-            std::cout << "===Success!===" << "\n";
-            std::cout << "Web server is listening port: " << listener_port << " "
-                << "On ip: " << listener_host << "\n";
+            std::cout << "=====   Success!   =====" << "\n";
+            std::cout << "Web server is listening port: " 
+                << listener_port_ << " " << "On ip: " << listener_host_ << "\n";
+            std::cout << "========================" << "\n";
             std::cout << "\033[0m";
         }
+    };
+    // basic non initialized values for SocketListener
+    struct addrinfo sockets::SocketListener::hints = {};
+    bool sockets::SocketListener::configured_ = false;
+    bool sockets::SocketListener::opened_ = false;
+    int sockets::SocketListener::listener_fd_ = FAILED;
+    uint sockets::SocketListener::conns_amount_ = 0;
+    std::string sockets::SocketListener::listener_host_;
+    std::string sockets::SocketListener::listener_port_;
 
+    /*
+     * Client sockets handler
+     */
+    // TODO: Сделать RawDataSocketBuffer именно закльцованный буфер из char *
+    // логика должна быть независима от HTTP, остаток обратно в начало буфера занесём
+    // TODO: атомарность операций с буфером
+    class ClientSocketHandler
+    {
     private:
-        static SingleListener *pinstance_;
-        static int listener_fd_; //listen on listener_fd_
-        static char *listener_host, *listener_port;
-
-        SingleListener(const char *host, const char *port, addrinfo hints) 
+        class RawDataCycledBuffer
         {
-            listener_host = strdup(host);
-            listener_port = strdup(port);
+        public:
+            // clear data frame
+            char raw_data_sequence[DEFAULT_HTTP_REQUEST_SIZE *
+                                   HTTP_MAX_SOCKET_REQUESTS_CAPACITY] = {0};
 
-            // Listener init
-            struct addrinfo *listener_res, *p;
-
-
-            int sockStatus = getaddrinfo(host, port, &hints, &listener_res);
-            int yes = 1;
-            if (sockStatus != 0) 
+            static RawDataCycledBuffer *InitBuffer()
             {
-                std::cerr << "getaddrinfo error: " << gai_strerror(sockStatus) << "\n";
-                exit(EXIT_FAILURE);
+                return new RawDataCycledBuffer();
             }
 
-            // Try to create listener server socket on TCP/IP
-	        for(p = listener_res; p != NULL; p = p->ai_next) 
+            RawDataCycledBuffer(const RawDataCycledBuffer &) = delete;
+            RawDataCycledBuffer &operator=(const RawDataCycledBuffer &) = delete;
+            ~RawDataCycledBuffer() = default;
+
+            bool addData(const char *data) noexcept(true)
             {
-		        if ((listener_fd_ = socket(p->ai_family, p->ai_socktype,
-				        p->ai_protocol)) == -1) 
-                {
-                    perror("server: socket");
-			        continue;
-		        }
+                // Implementation placeholder
+                return false;
+            }
 
-		        if (setsockopt(listener_fd_, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes)) == -1) 
-                {
-                    perror("server: setsockopt");
-                    exit(EXIT_FAILURE);
-		        }
-
-		        if (bind(listener_fd_, p->ai_addr, p->ai_addrlen) == -1) 
-                {
-			        close(listener_fd_);
-                    perror("server: bind");
-			        continue;
-		        }
-
-		        break; //success
-	        }
-            freeaddrinfo(listener_res); // all done with this structure
-
-            if (p == NULL) 
+            bool extractData(char &extractHandler) noexcept(true)
             {
-                std::cerr << "server: failed to bind \n";
-                exit(EXIT_FAILURE);
-            }           
-        }
-        ~SingleListener()
-        {
-            close(listener_fd_);
-            free(listener_host);
-            free(listener_port);
-        }
-        SingleListener(const SingleListener&) = delete;
-        SingleListener& operator=(const SingleListener&) = delete;
-};
+                // Implementation placeholder
+                return false;
+            }
 
-SingleListener* SingleListener::pinstance_ = nullptr;
-int SingleListener::listener_fd_ = -1;
-char* SingleListener::listener_host = nullptr;
-char* SingleListener::listener_port = nullptr;
-
-// Only working with HTTP header requests
-class ClientSocket 
-{
-    public:
-        ClientSocket(int sockfd, std::string ipstr): descriptor_num(sockfd), ipstr(ipstr)
-        {
-        }
-        ~ClientSocket()
-        {
-            delete buffer;
-        }
-        ssize_t receiveall()
-        {
-            //return recv(descriptor_num, (*buffer).buffer, sizeof((*buffer).buffer), 0);
-            char tmpchar[DEFAUL_HTTP_REQUEST_LENGHT];
-            ssize_t res = recv(descriptor_num, tmpchar, sizeof(tmpchar), 0);
-            if (res > 0) 
+            ssize_t getFreeSize() { return size; }
+            const size_t available_space()
             {
-                res = (*buffer).tryAddRequest(tmpchar, res);
+                return size - placed;
+            }
+            // -1 means failed to fetch
+            ssize_t tryAddData(const char *str, size_t len) noexcept(true)
+            {
+                if (len == 0)
+                {
+                    return 0;
+                }
+                else if (len > getFreeSize())
+                {
+                    std::cerr << "Not enough space for request. Skip";
+                    return FAILED;
+                }
+                else if (write_pos == read_pos && placed != 0)
+                {
+                    std::cerr << "Something went wrong. Buffer dumped";
+                    write_pos = 0;
+                    read_pos = 0;
+                    placed = 0;
+                    return FAILED;
+                }
+                for (int i = 0; i < len; i++)
+                {
+                    raw_data_sequence[write_pos] = str[i];
+                    write_pos = (write_pos + 1) %
+                                (sizeof(raw_data_sequence) / sizeof(char));
+                }
+                placed += len;
+                return len;
+            }
+
+            uint write_pos = 0, read_pos = 0, placed = 0;
+            size_t size;
+        private:
+            RawDataCycledBuffer()
+            {
+                size = (size_t)sizeof(raw_data_sequence) / sizeof(char);
+            }
+        };
+
+        // vars
+        int socket_fd;
+        uint client_port;
+        bool isIPv6;
+        std::string client_ip;
+        sockaddr socket_info;
+        RawDataCycledBuffer *buffer = nullptr;
+
+        // TCP/IP data manipulations
+        ssize_t proceedIncomeSocketData() noexcept(true)
+        {
+            int flags = 0;
+            char tmpchar[DEFAULT_HTTP_REQUEST_SIZE];
+            ssize_t res = recv(socket_fd, tmpchar, sizeof(tmpchar), flags);
+            if (res == 0)
+            {
+                return 0;
+            }
+            uint write_pos_snapshot = buffer->write_pos;
+            uint read_pos_snapshot = buffer->read_pos;
+            uint placedCnt_snapshot = buffer->placed;
+            ssize_t buffer_res;
+            if (res > 0)
+            {
+                buffer_res = buffer->tryAddData(tmpchar, res);
+            }
+            if (res != buffer_res)
+            {
+                std::cerr << "Failed to add data. Skip socket data" << "\n";
+                buffer->write_pos = write_pos_snapshot;
+                buffer->read_pos = read_pos_snapshot;
+                buffer->placed = placedCnt_snapshot;
+                return FAILED;
             }
             return res;
         }
 
-        //TODO: продумать логику с мультеплесированием и асинхронным уведовлением результата отправки, пока вслепую
-        void sendall_threaded(char* buf, int len) 
+    public:
+        ClientSocketHandler(int sockfd, struct sockaddr sa)
         {
-            socks_thread_pool.insert(descriptor_num);
-            std::lock_guard<std::mutex> lock(pool_mutex);
-            if (socks_thread_pool.count(descriptor_num)) 
-            {
-                std::cerr << "socket is already in use\n";
-                return;
-            }
-            
-
-            std::thread([this, buf, len]() 
-            {
-                int sent = len;
-                int res = sendall(descriptor_num, buf, &sent);
-                if (res == -1) 
-                {
-                    std::cerr << "sendall failed in thread: " << strerror(errno) << "\n";
-                }
-                {
-                    std::lock_guard<std::mutex> lock(pool_mutex);
-                    socks_thread_pool.erase(descriptor_num);
-                }
-            }).detach();
+            socket_fd = sockfd;
+            client_port = get_in_port(&sa);
+            isIPv6 = is_IPv6(&sa);
+            client_ip = get_printable_ip(&sa);
+            socket_info = sa;
+            buffer = RawDataCycledBuffer::InitBuffer();
+        }
+        // ClientSocketHandler(const ClientSocketHandler&) = default;
+        // ClientSocketHandler& operator=(const ClientSocketHandler&) = default;
+        ~ClientSocketHandler()
+        {
         }
 
-        static int sendall(int sockfd, char *buf, int *len)
+        std::string getIP() { return client_ip; }
+        uint getPort() { return client_port; }
+        int getFd() { return socket_fd; }
+
+        bool isSocketEmpty() {return (buffer->placed == 0) && buffer->read_pos
+            == buffer->write_pos;}
+
+        // TODO: implement multithreading
+        size_t proceedIncomeSocketDataThreaded() noexcept(true)
         {
-            int total = 0;
-            int bytesleft = *len;
-            int n;
-            while(total < *len)
-            {
-                n = send(sockfd, buf+total, bytesleft, 0);
-                if (n==-1) {break;}
-                total += n;
-                bytesleft -= n;
-            }
-            *len = total;
-            return n == -1 ? -1 : 0;
+            return proceedIncomeSocketData();
         }
-
-        static int sendallHTML(int sockfd, char *buf, int *len)
-        {
-            std::string body(buf, *len);  // тело
-            std::string response =
-                "HTTP/1.1 200 OK\r\n"
-                "Content-Type: text/html\r\n"
-                "Content-Length: " + std::to_string(body.length()) + "\r\n"
-                "\r\n" +
-                body;
-
-            const char* full_response = response.c_str();
-            int total = 0;
-            int bytesleft = response.length();
-            int n;
-
-            while (total < bytesleft)
-            {
-                n = send(sockfd, full_response + total, bytesleft - total, 0);
-                if (n == -1) break;
-                total += n;
-            }
-
-            *len = total;
-            return n == -1 ? -1 : 0;
-        }
-
-        int getSocketDescriptorNum(void)
-        {
-            return descriptor_num;
-        }
-        
-        std::string getSocketIP(void)
-        {
-            return ipstr;
-        }
-
-        bool ExtractHeadRequest(char req[])
-        {
-            if(buffer->size() == 0)
-            {
-                return false;
-            }
-
-            bool res = buffer->tryExtractFirstRequest(req);
-            if(res)
-            {
-                std::cout << "Request has been readed" << "\n";
-            }
-            else 
-            {
-                std::cerr << "Failed to read request. Request dumped." 
-                << "\n";
-                return false;
-            }
-
-            return true;
-        }
-
-        bool isHaveRequests(void)
-        {
-            return buffer->size() != 0;
-        }
-        
-    private:
-        const std::string ipstr;
-        const int descriptor_num; 
-        static std::set<int> socks_thread_pool;
-        static std::mutex pool_mutex;
-
-        class RingedRequestsBuffer
-        {
-            public: 
-                std::string printableIP = "";
-                const static constexpr size_t request_buffer_chars = 1024;
-                const static constexpr size_t total_size = request_buffer_chars * 10;
-                char buffer[request_buffer_chars];
-                RingedRequestsBuffer() 
-                {
-                    write_pos = 0;
-                    read_pos = 0;
-                    used = 0;
-                }
-
-                ~RingedRequestsBuffer() 
-                {
-                }
-
-                const size_t available_space()
-                {
-                    return total_size - used;
-                }
-
-                const size_t size()
-                {
-                    return used;
-                }
-
-                ssize_t tryAddRequest(const char *str, size_t len)
-                {
-                    if (len == 0)
-                    {
-                        return 0;
-                    }
-                    else if (len > available_space()) 
-                    {
-                        throw std::runtime_error("RingedBuffer overflow: not enough space to write");
-                        return -1;
-                    }
-                    else if(write_pos == read_pos && used != 0) 
-                    {
-                        std::cerr << "Something went wrong. Buffer dumped";
-                        write_pos = 0;
-                        read_pos = 0;
-                        used = 0;
-                        return -1;
-                    }
-                    for (int i = 0; i < len; i++)
-                    {
-                        buffer[write_pos] = str[i];
-                        write_pos = (write_pos+1)%request_buffer_chars;
-                    }
-                    used += len;
-                    return len;
-                }
-
-                bool tryExtractFirstRequest(char toCopy[])
-                {
-                    bool extracted = false;
-                    int i = 0;
-                    int rcnt = 0, ncnt = 0;
-                    char tmp;
-                    while(!extracted && used > 0)
-                    {
-                        used -= 1;
-                        tmp = buffer[read_pos];
-                        toCopy[i] = tmp;
-                        buffer[read_pos++] = '\000';
-                        if(tmp == '\r' || tmp == '\n')    
-                        {
-                            if(tmp == '\r' && (ncnt==0 || ncnt == 1))
-                            {
-                                rcnt += 1;
-                            }
-                            else if(tmp == '\n' && (rcnt==1 || rcnt == 2))
-                            {
-                                ncnt += 1;
-                            }
-                            
-                        }
-                        else
-                        {
-                            rcnt = 0;
-                            ncnt = 0;
-                        }
-                        if(rcnt==2 && ncnt ==2)
-                        {
-                            extracted = true;
-                        }
-                        i += 1;
-                    }
-                    return extracted;
-                }
-
-            private:
-                int write_pos, read_pos, used;
-        };
-
-
-        RingedRequestsBuffer *buffer = new RingedRequestsBuffer();
-};
-std::mutex ClientSocket::pool_mutex;
-std::set<int> ClientSocket::socks_thread_pool;
+    };
+}

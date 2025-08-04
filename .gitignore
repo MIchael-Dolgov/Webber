@@ -1,3 +1,7 @@
 .DS_Store/
 webserver
 .vscode/
+build/
+old/
+WebStructure.drawio
+.DS_Store
