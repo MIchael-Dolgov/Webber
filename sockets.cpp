@@ -334,6 +334,14 @@ namespace sockets
         bool isSocketEmpty() {return (buffer->placed == 0) && buffer->read_pos
             == buffer->write_pos;}
 
+        void freeUpBufferSpace(size_t size)
+        {
+            if (size+buffer->read_pos > buffer->write_pos 
+                || size > buffer->placed) {return;}
+            buffer->read_pos = buffer->read_pos + size;
+            buffer->placed = buffer->placed - size;
+        }
+
         // TODO: implement multithreading
         size_t proceedIncomeSocketDataThreaded() noexcept(true)
         {

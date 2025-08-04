@@ -155,15 +155,16 @@ int main(int argc, char *argv[])
                 !(client_sockets[i]->isSocketEmpty()))
             {
                 std::cout
-                    << "client is ready to recieve data: "
+                    << "client is ready to receive data: "
                     << client_sockets[i]->getIP() << ":"
                     << client_sockets[i]->getPort() << " fd:"
                     << client_sockets[i]->getFd() << "\n";
                 std::cout
                     << "client: " << client_sockets[i]->getIP() << ":"
-                    << client_sockets[i]->getPort() << " data is sending...";
+                    << client_sockets[i]->getPort() << " response is sending...";
                 //TODO: http helpers
                 //Implement atomized multithreading workers sending
+                
             }
 
             // All client requests satisfied
