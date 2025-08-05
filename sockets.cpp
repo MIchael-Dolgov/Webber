@@ -196,9 +196,6 @@ namespace sockets
     /*
      * Client sockets handler
      */
-    // TODO: Сделать RawDataSocketBuffer именно закльцованный буфер из char *
-    // логика должна быть независима от HTTP, остаток обратно в начало буфера занесём
-    // TODO: атомарность операций с буфером
     class ClientSocketHandler
     {
     private:

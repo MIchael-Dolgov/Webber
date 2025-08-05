@@ -5,26 +5,20 @@
 #define FAIL false
 #define SUCCESS true
 #define HTML_TAG_CONTAINER_SIZE 8 // </html>\n + \0 end string
-// TODO: implement body parser
 namespace HTTP
 {
-    class request
+    class Request
     {
     private:
-        size_t request_size = 0;
+        size_t request_char_len = 0;
         bool header_extracted = false;
         bool isHaveBody = false;
         bool body_extracted = false;
 
-        //TODO: implement easy keywords recognition by structure fields
-        struct DeserializedHTMLStructure
-        {
-
-        };
     public:
         std::string header = "";
         std::string body = "";
-        request() = default;
+        Request() = default;
 
         // FAIL(false) return means what HTML not full or broken
         bool tryExtractHTML(std::string& raw_data) noexcept(true)
@@ -78,10 +72,11 @@ namespace HTTP
             }
             if(!this->header_extracted)
             {
+                this->request_char_len = this->header.length();
                 return FAIL;
             }
             // body extraction
-            // if sequence not startidng with <html> skip body parsing
+            // if sequence not starting with <html> skip body parsing
             // sequence ends up to </html>\n then complete parsing
             // Does it have <html> body? Alg
             int j = 0;
@@ -91,7 +86,11 @@ namespace HTTP
                 tagContainer[j] = raw_data[i+j];
             }
             tagContainer[j] = '\0';
-            if(strcmp(tagContainer, "<html>\n") != 0) {return SUCCESS;}
+            if(strcmp(tagContainer, "<html>\n") != 0) 
+            {
+                this->request_char_len = this->header.length();
+                return SUCCESS;
+            }
             this->isHaveBody = true;
             body += "<html>";
             i += j;
@@ -109,12 +108,23 @@ namespace HTTP
                 }
                 i += 1;
             }
+            this->request_char_len = this->header.length() 
+                + this->body.length();
             if(this->isHaveBody && !this->body_extracted) {return FAIL;}
             return SUCCESS;
         }
     };
     
-    class response
+    class Response
+    {
+    };
+
+    //TODO: implement deserializers
+    class DeserializedHeader
+    {
+    };
+    
+    class DeserializedBody
     {
     };
 }

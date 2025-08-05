@@ -10,8 +10,8 @@
 int main(int argc, char *argv[])
 {
     using std::string;
-    using HTTP::request;
-    using HTTP::response;
+    using HTTP::Request;
+    using HTTP::Response;
     //args initialization
     WebCliConfig &server_conf = WebCliConfig::instance();
     if(argc >= 2 && (string)argv[FIRST_USER_FLAG] == "--help")
@@ -118,7 +118,6 @@ int main(int argc, char *argv[])
                     client_sockets[newfd_var]->getFd() << "\n";
             }
 
-            //TODO: continue refactoring
             // Connected client is sending data
             else if (i != listener_fd && FD_ISSET(i, &read_fds))
             {
