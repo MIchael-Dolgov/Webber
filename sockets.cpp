@@ -218,16 +218,27 @@ namespace sockets
             RawDataCycledBuffer &operator=(const RawDataCycledBuffer &) = delete;
             ~RawDataCycledBuffer() = default;
 
-            bool addData(const char *data) noexcept(true)
+            std::string extractData() noexcept(true) 
             {
-                // Implementation placeholder
-                return false;
-            }
+                std::string result;
+                if (read_pos == write_pos) 
+                {
+                    return result;
+                }
 
-            bool extractData(char &extractHandler) noexcept(true)
-            {
-                // Implementation placeholder
-                return false;
+                if (read_pos < write_pos) 
+                {
+                    result.append(raw_data_sequence + 
+                        read_pos, write_pos - read_pos);
+                } 
+                else 
+                {
+                    result.append(raw_data_sequence + read_pos, 
+                        size - read_pos);
+                    result.append(raw_data_sequence, write_pos);
+                }
+
+                return result;
             }
 
             ssize_t getFreeSize() { return size; }
@@ -331,6 +342,7 @@ namespace sockets
         uint getPort() { return client_port; }
         int getFd() { return socket_fd; }
 
+        //Buffer tools
         bool isSocketEmpty() {return (buffer->placed == 0) && buffer->read_pos
             == buffer->write_pos;}
 
@@ -359,6 +371,12 @@ namespace sockets
             }
         }
 
+        std::string forwardExtractedData() noexcept(true)
+        {
+            return buffer->extractData();
+        }
+
+        // Requests/Response tools
         // TODO: implement multithreading
         size_t proceedIncomeSocketDataThreaded() noexcept(true)
         {

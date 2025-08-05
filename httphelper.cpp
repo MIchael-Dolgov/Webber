@@ -80,10 +80,10 @@ namespace HTTP
             {
                 return FAIL;
             }
-            //body extraction
-            //TODO: if sequence not startidng with <html> skip body parsing
-            //TODO: if sequence ends up to </html>\n then complete parsing
-            // Does it have <html> body?
+            // body extraction
+            // if sequence not startidng with <html> skip body parsing
+            // sequence ends up to </html>\n then complete parsing
+            // Does it have <html> body? Alg
             int j = 0;
             char tagContainer[HTML_TAG_CONTAINER_SIZE] = {'\000'}; //empty
             for(; j < HTML_TAG_CONTAINER_SIZE-1 && i + j < len; j++)
