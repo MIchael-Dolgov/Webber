@@ -334,12 +334,29 @@ namespace sockets
         bool isSocketEmpty() {return (buffer->placed == 0) && buffer->read_pos
             == buffer->write_pos;}
 
-        void freeUpBufferSpace(size_t size)
+        void freeUpBufferSpace(size_t size) noexcept(true)
         {
             if (size+buffer->read_pos > buffer->write_pos 
-                || size > buffer->placed) {return;}
+                || size > buffer->placed) 
+            {
+                flushBuffer();
+                return;
+            }
             buffer->read_pos = buffer->read_pos + size;
             buffer->placed = buffer->placed - size;
+        }
+
+        void flushBuffer() noexcept(true)
+        {
+            buffer->write_pos = 0;
+            buffer->read_pos = 0;
+            buffer->placed = 0;
+            buffer->size = 0;
+            for(int i = 0; 
+                i < sizeof(buffer->raw_data_sequence)/sizeof(char); i++)
+            {
+                buffer->raw_data_sequence[i] = '\000';
+            }
         }
 
         // TODO: implement multithreading

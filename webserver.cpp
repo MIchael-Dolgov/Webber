@@ -3,12 +3,15 @@
 
 #include "cli.cpp"
 #include "sockets.cpp"
+#include "httphelper.cpp"
 
 #define FIRST_USER_FLAG 1
 
 int main(int argc, char *argv[])
 {
     using std::string;
+    using HTTP::request;
+    using HTTP::response;
     //args initialization
     WebCliConfig &server_conf = WebCliConfig::instance();
     if(argc >= 2 && (string)argv[FIRST_USER_FLAG] == "--help")
@@ -164,9 +167,8 @@ int main(int argc, char *argv[])
                     << client_sockets[i]->getPort() << " response is sending...";
                 //TODO: http helpers
                 //Implement atomized multithreading workers sending
-                
-            }
 
+            }
             // All client requests satisfied
             else if(FD_ISSET(i, &write_fds) && 
                 client_sockets[i]->isSocketEmpty())
