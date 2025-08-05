@@ -319,6 +319,22 @@ namespace sockets
             return res;
         }
 
+        void sendData(const char* data, size_t len)
+        {
+            int total = 0;
+            size_t bytesleft = len;
+            int n;
+            while(total < len)
+            {
+                n = send(this->socket_fd, data+total, bytesleft, 0);
+                if (n==-1) {break;}
+                total += n;
+                bytesleft -= n;
+            }
+            return;
+        }
+
+
     public:
         ClientSocketHandler(int sockfd, struct sockaddr sa)
         {
@@ -370,7 +386,7 @@ namespace sockets
 
         std::string forwardExtractedData() noexcept(true)
         {
-            return buffer->extractData();
+            return std::move(buffer->extractData());
         }
 
         // Requests/Response tools
@@ -378,6 +394,11 @@ namespace sockets
         size_t proceedIncomeSocketDataThreaded() noexcept(true)
         {
             return proceedIncomeSocketData();
+        }
+
+        void sendDataThreaded(const char *data, size_t len)
+        {
+            sendData(data, len);
         }
     };
 }

@@ -7,7 +7,7 @@
 #define DEFAULT_HOST_IP "127.0.0.1"
 //#define DEFAULT_PACKET_TRANSFER_SIZE 1024u
 //#define DEFAULT_REQUEST_LENGTH 1024u
-#define DEFAULT_PAGES_ROUTES_INDEXING_FILE_LOCATION "routes.txt"
+#define DEFAULT_PAGES_ROUTES_INDEXING_FILE_LOCATION "file_storage"
 
 // Global webserver condition
 class WebCliConfig

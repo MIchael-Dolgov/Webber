@@ -12,6 +12,7 @@ int main(int argc, char *argv[])
     using std::string;
     using HTTP::Request;
     using HTTP::Response;
+    using HTTP::DeserializedHeader;
     //args initialization
     WebCliConfig &server_conf = WebCliConfig::instance();
     if(argc >= 2 && (string)argv[FIRST_USER_FLAG] == "--help")
@@ -161,12 +162,42 @@ int main(int argc, char *argv[])
                     << client_sockets[i]->getIP() << ":"
                     << client_sockets[i]->getPort() << " fd:"
                     << client_sockets[i]->getFd() << "\n";
+
                 std::cout
                     << "client: " << client_sockets[i]->getIP() << ":"
                     << client_sockets[i]->getPort() << " response is sending...";
-                //TODO: http helpers
-                //Implement atomized multithreading workers sending
 
+                //TODO: логика удовлетворения запроса пользователя
+                std::string var = (client_sockets[i]->forwardExtractedData());
+                Request *var2 = new Request();
+                if (!var2->tryExtractHTML(var)) // extraction from buffer failed
+                {
+                    client_sockets[i]->freeUpBufferSpace(var2->request_char_len);
+                    continue;
+                }
+                else // extraction get good request
+                {
+                    client_sockets[i]->freeUpBufferSpace(var2->request_char_len); 
+                    DeserializedHeader *header = new DeserializedHeader(var2->header);
+                    if(header->method == "GET")
+                    {
+                        Response resp = Response(server_conf.getRoutesPage(), 
+                            header->path);
+                        std::string currLine;
+                        while (!resp.eof()) 
+                        {
+                        if (resp.readLine(currLine)) 
+                            {
+                                if (!currLine.empty()) 
+                                {
+                                    client_sockets[i]->sendDataThreaded
+                                        (currLine.c_str(),  currLine.length());
+                                }
+                            }
+                        }
+                    }
+                }
+                //Implement atomized multithreading workers sending
             }
             // All client requests satisfied
             else if(FD_ISSET(i, &write_fds) && 
