@@ -1,0 +1,13 @@
+.DS_Store/
+webserver
+.vscode/
+build/
+old/
+WebStructure.drawio
+.DS_Store
+Webber
+webber
+CMakeCache.txt
+cmake_install.cmake
+CMakeFiles/
+makefile

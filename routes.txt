@@ -1,0 +1,3 @@
+/ file_storage/index.html
+/page1 file_storage/page1.html
+/logo.png file_storage/logo.png
