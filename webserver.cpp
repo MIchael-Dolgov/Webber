@@ -1,128 +1,95 @@
 #include <iostream>
-#include <stdlib.h>
-#include <errno.h>
-#include <sys/socket.h>
-#include <sys/types.h>
-#include <netinet/in.h>
-#include <netdb.h>
-#include <arpa/inet.h>
-#include <sys/wait.h>
-#include <signal.h>
-#include <map>
-#include <string>
-#include <fstream>
-#include <sstream>
+#include <unordered_map>
+#include <filesystem>
 
+#include "cli.cpp"
 #include "sockets.cpp"
+#include "httphelper.cpp"
+#include "indexingtools.hpp"
 
-// config
-#define LOCALHOST "127.0.0.1"
-#define PORT "10980"
-#define CONNS_AMOUNT 128
-#define PACKET_SIZE 1024
-#define DEFAULT_HTTP_SIZE 1024
+#define FIRST_USER_FLAG 1
 
-// get printable IP address (IPv4 or IPv6) as std::string
-std::string get_printable_ip(struct sockaddr *sa)
+int main(int argc, char *argv[])
 {
-    char ipstr[INET6_ADDRSTRLEN];
-    void *addr;
-    if (sa->sa_family == AF_INET) 
+    using std::string;
+    using HTTP::Request;
+    using HTTP::Response;
+    using HTTP::DeserializedHeader;
+    //args initialization
+    WebCliConfig &server_conf = WebCliConfig::instance();
+    if(argc >= 2 && (string)argv[FIRST_USER_FLAG] == "--help")
     {
-        addr = &(((struct sockaddr_in*)sa)->sin_addr);
+        std::cout << WebCliConfig::help() << "\n";
+        return EXIT_SUCCESS;
     }
-    else
+    for(int i = 1; i+1 <= argc; i+=2)
     {
-        addr = &(((struct sockaddr_in6*)sa)->sin6_addr);
-    }
-    inet_ntop(sa->sa_family, addr, ipstr, sizeof(ipstr));
-    return std::string(ipstr);
-}
-
-in_port_t get_in_port(struct sockaddr *sa)
-{
-    if (sa->sa_family == AF_INET) 
-    {
-        return (((struct sockaddr_in*)sa)->sin_port);
-    }
-    return (((struct sockaddr_in6*)sa)->sin6_port);
-}
-
-std::map<std::string, std::string> LoadRoutingMap(const std::string& filepath)
-{
-    std::map<std::string, std::string> routeMap;
-    std::ifstream file(filepath);
-
-    if (!file.is_open()) {
-        std::cerr << "Can't open file: " << filepath << "\n";
-        return routeMap;
-    }
-
-    std::string line;
-    while (std::getline(file, line)) {
-        std::istringstream iss(line);
-        std::string route, filePath;
-
-        if (!(iss >> route >> filePath)) {
-            std::cerr << "Incorrect stroke: " << line << "\n";
-            continue;
+        try
+        {
+            server_conf.setParam(argv[i], argv[i+1]);
         }
-
-        routeMap[route] = filePath;
+        catch(const std::exception& err)
+        {
+            std::cerr << "invalid parameters sequence: " << err.what() << "\n";
+            return EXIT_FAILURE;
+        }
+    }
+    std::cout << "Indexing all routes and mapping to files from file: " << 
+        server_conf.getRoutesFile() << " " << "..." << "\n";
+    std::unordered_map<std::string, std::string> router = {};
+    try
+    {
+        //indexing all routes and link to their paths
+        IndexingTools::FileExplorer routesExplorer = 
+            IndexingTools::FileExplorer(server_conf.getRoutesFile());
+        std::string output;
+        IndexingTools::FileExplorer::FileExplorerIterator *iter = 
+            routesExplorer.getIterator();
+        while(iter->next(output))
+        {
+            int space_pos = output.find(' ');
+            if (space_pos != std::string::npos) 
+            {
+                std::string first = output.substr(0, space_pos);
+                std::string second = output.substr(space_pos + 1);
+                router[first] = second;
+            } 
+            else 
+            {
+                std::cerr << "invalid route: " << output << "skipping line.";
+            }
+        }
+        if (!iter->isEnd())
+        {
+            throw std::runtime_error("file reading went wrong");
+        }
+    }
+    catch (const std::exception& err)
+    {
+        std::cerr << "\e[0;31m";
+        std::cerr << "Indexing failed: " << err.what() << "\n";
+        return EXIT_FAILURE;
+    }
+    //init all networking entities for http workflow
+    sockets::SocketListener &main_web_gate = 
+        sockets::SocketListener::instance();
+    try 
+    {
+        main_web_gate.configure(server_conf.getMaxConns(), server_conf.getIP(),
+            server_conf.getPort()); 
+        main_web_gate.startListen(); 
+    }
+    catch(const std::exception& err)
+    {
+        std::cerr << "Failed to open listening socket: " << err.what() << "\n";
+        return EXIT_FAILURE;
     }
 
-    return routeMap;
-}
-
-
-// rewrite and optimize
-char* LoadFileToBuffer(const std::string& filepath, size_t& outSize)
-{
-    std::ifstream file(filepath, std::ios::binary | std::ios::ate);
-    if (!file.is_open()) {
-        std::cerr << "Failed to open file: " << filepath << "\n";
-        outSize = 0;
-        return nullptr;
-    }
-
-    std::streamsize size = file.tellg(); 
-    file.seekg(0, std::ios::beg);          
-
-    char* buffer = new char[size + 1]; 
-    if (!file.read(buffer, size)) {
-        std::cerr << "Ошибка при чтении файла: " << filepath << "\n";
-        delete[] buffer;
-        outSize = 0;
-        return nullptr;
-    }
-
-    buffer[size] = '\0';
-    outSize = static_cast<size_t>(size);
-    return buffer;
-}
-
-// args: port, connectionsAtMomentLimit
-int main (int argc, char *argv[]) 
-{
-    //index all routes
-    std::map<std::string, std::string> routes = LoadRoutingMap("routes.txt");
-
-    // Listener socket config
-    struct addrinfo hints;
-    memset(&hints, 0, sizeof hints);
-    hints.ai_family = AF_UNSPEC;
-	hints.ai_socktype = SOCK_STREAM;
-    hints.ai_protocol = 0;
-	hints.ai_flags = AI_PASSIVE; // use my local IP (OS localloop) 
-
-    // Create Listener socket
-    SingleListener *listener = SingleListener::CreateInstance(LOCALHOST, PORT, hints);
-    listener->StartListen(CONNS_AMOUNT);
-
-    // Configurate event loop
-    int listener_fd = listener->GetListenerDescriptor();
+    // Configure web server event loop
+    int listener_fd = main_web_gate.GetListenerDescriptor();
     int fdmax = listener_fd;
     fd_set master, read_fds, write_fds, except_fds; //set for all descriptors
+    //clear all
     FD_ZERO(&master);
     FD_ZERO(&read_fds);
     FD_ZERO(&write_fds);
@@ -131,130 +98,230 @@ int main (int argc, char *argv[])
     // add the listener to the master set
     FD_SET(listener_fd, &master);
 
-    // clients
-    int newfd; //newly accepted socket descriptor
+    // web server clients
+    int newfd_var; //newly accepted socket descriptor
     struct sockaddr_storage remoteaddr; //client address
-    socklen_t addrlen;
-    int nbytes;
-    std::map<int, ClientSocket*> client_sockets = {};
-
-    //char request_buf[DEFAULT_HTTP_SIZE]; //buffer for client data;
+    socklen_t addrlen; // sizeof new socket
+    std::unordered_map<int, sockets::ClientSocketHandler*> client_sockets 
+        = {};
+    ssize_t nbytes; // client socket request size
 
     // I/O event loop
-    int read_write_event_status;
+    int read_write_except_event_status;
     while(true) 
     {
         read_fds = master; 
-        read_write_event_status = select(fdmax+1, &read_fds, &write_fds, &except_fds, NULL);
-        if(read_write_event_status == -1) 
+        read_write_except_event_status = select(fdmax+1, &read_fds, 
+            &write_fds, NULL, NULL);
+        if(read_write_except_event_status == -1) 
         {
-            perror("select");
+            std::cerr << "selector issue";
             return EXIT_FAILURE;
         }
-
-        for(int i = 0; i <= fdmax; i++) 
+        //check IO events
+        //TODO: restrict CPU time against overload (clock lock at 1 min to 10% of CPU time)
+        for(int i = 0; i <= fdmax; i++)
         {
+            if (!FD_ISSET(i, &master))
+            {
+                continue;
+            }
             // New TCP connection!
-            if (i == listener_fd && FD_ISSET(i, &read_fds)) 
+            if (i == listener_fd && FD_ISSET(i, &read_fds))
             {
                 addrlen = sizeof(remoteaddr);
-                newfd = accept(listener_fd,
+                newfd_var = accept(listener_fd,
                     (struct sockaddr *)&remoteaddr,
                     &addrlen);
-                if (newfd == -1) 
+                if (newfd_var == -1) 
                 {
-                    perror("accept error");
+                    std::cerr << "New TCP connection failed. Refusing..." 
+                        << "\n";
+                    continue;
                 }
-                FD_SET(newfd, &master);
-                if (newfd > fdmax)
+                FD_SET(newfd_var, &master);
+                if (newfd_var > fdmax)
                 {
-                    fdmax = newfd;
+                    fdmax = newfd_var;
                 }
-                client_sockets[newfd] = new ClientSocket(newfd, get_printable_ip((struct sockaddr*)&remoteaddr));
-                std::cout << "new connection from " << get_printable_ip((struct sockaddr*)&remoteaddr);
-                std::cout << " from port: " << std::dec << 
-                ntohs(get_in_port((struct sockaddr*)&remoteaddr)) << " ";
-                std::cout << "with fd: " << newfd << "\n";
+                client_sockets[newfd_var] 
+                    = new sockets::ClientSocketHandler(newfd_var,
+                        (struct sockaddr&)remoteaddr);
+                // new connection terminal log
+                std::cout << "new connection from " << 
+                    client_sockets[newfd_var]->getIP() << "\n";
+                std::cout << "from port: " <<
+                    client_sockets[newfd_var]->getPort() << "\n";
+                std::cout << "with fd: " << 
+                    client_sockets[newfd_var]->getFd() << "\n";
             }
 
-            // Connected client send data
+            // Connected client is sending data
             else if (i != listener_fd && FD_ISSET(i, &read_fds))
             {
-                nbytes = (*client_sockets[i]).receiveall(); 
 
-                if (nbytes <= 0)
+                nbytes = client_sockets[i]->proceedIncomeSocketDataThreaded();
+                if(nbytes <= 0)
                 {
-                    // client closed connection
-                    if (nbytes == 0) 
+                    if (nbytes == 0)
                     {
-                        std::cout << "close connection: " << i << "\n";
+                        std::cout << "close connection: " 
+                            << client_sockets[i]->getIP() << "\n";
                     }
-                    else 
+                    else
                     {
-                        perror("recv");
+                        std::cerr 
+                            << "socket handling error. Connection refused: "
+                            << client_sockets[i]->getIP() << ":"
+                            << client_sockets[i]->getPort() << " fd:"
+                            << client_sockets[i]->getFd() << "\n";
                     }
-                    close(i);
+                    delete client_sockets[i];
+                    client_sockets.erase(i);
                     FD_CLR(i, &master);
                     FD_CLR(i, &write_fds);
-                }    
-                if((*client_sockets[i]).isHaveRequests())
+                    continue; //skip already have data check for preventing
+                }
+                //Already have data?
+                if(client_sockets.count(i) > 0 && 
+                    !(client_sockets[i]->isSocketEmpty()))
                 {
+                    //Next processing round
                     FD_SET(i, &write_fds);
                 }
             }
-            // Connected client ready to recieve data
-            else if (i != listener_fd && FD_ISSET(i, &write_fds) && (*client_sockets[i]).isHaveRequests())
+
+            else if (i != listener_fd && FD_ISSET(i, &write_fds) && 
+                !(client_sockets[i]->isSocketEmpty()))
             {
-                std::cout << "\e[0;34m";
-                std::cout << "socket fd: " << (*client_sockets[i]).getSocketDescriptorNum() << " "
-                << "with ip: " << (*client_sockets[i]).getSocketIP() << " "
-                << "is ready to recieve html" << "\n";
-                // clear stream from decorators
-                std::cout << "\033[0m" << "\n";
-
-                
-                std::cout << "\e[0;34m";
-                std::cout << "Request processing for ip: " << 
-                (*client_sockets[i]).getSocketIP() << 
-                " is started:" << "\n";
-                std::cout << "\033[0m" << "\n";
-                char* req = new char[DEFAUL_HTTP_REQUEST_LENGHT];
-                if((*client_sockets[i]).ExtractHeadRequest(req))
+                //TODO: отрефакторить точку отправки Response. (мультиплексор)
+                Response resp;
+                try
                 {
-                    std::cout << req << "\n";
+                    std::cout
+                        << "client is ready to receive data: "
+                        << client_sockets[i]->getIP() << ":"
+                        << client_sockets[i]->getPort() << " fd:"
+                        << client_sockets[i]->getFd() << "\n";
 
-                    //request satisfaction
-                    int j = 0, k = 0;
-                    char httpMethod[6+1] = {};
-                    char route[256] = {};
-                    while(req[j] != 0x20)
+                    std::cout
+                        << "client: " << client_sockets[i]->getIP() << ":"
+                        << client_sockets[i]->getPort() 
+                        << " response is sending..." << "\n";
+
+                    std::string var = (client_sockets[i]->forwardExtractedData());
+                    Request *var2 = new Request();
+                    // is HTTP 1.1 request? No? Then skip
+                    if (!var2->tryExtractHTML(var)) // extraction from buffer failed
                     {
-                        httpMethod[j] = req[j];
-                        j += 1;
+                        client_sockets[i]->freeUpBufferSpace(var2->request_char_len);
+                        continue;
                     }
-                    httpMethod[++j] = '\0';
-                    while(req[j] != 0x20)
+                    else // extraction get good request
                     {
-                        route[k] = req[j];
-                        j += 1;
-                        k += 1;
-                    }
-                    route[++k] = '\0';
-                    if(strcmp(httpMethod, "GET") == 0)
-                    {
-                        size_t len;
-                        char* filecontent = LoadFileToBuffer("pages/" + routes[route], len);
-                        int tmp = len;
-                        //implement multithreading
-                        //(*client_sockets[i]).sendall_threaded(filecontent, (int)len);
-                        (*client_sockets[i]).sendallHTML(i, filecontent, &tmp);
+                        client_sockets[i]->freeUpBufferSpace(var2->request_char_len); 
+                        DeserializedHeader *header = 
+                            new DeserializedHeader(var2->header);
+                        //===== Your response logic =====
+                        if(header->method == "GET")
+                        {
+                            if(router.count(header->path) > 0)
+                            {
+                                std::string route = router[header->path];
+                            
+                                if(IndexingTools::isTextFile(route))
+                                {
+                                    //Prepare file
+                                    IndexingTools::FileExplorer file = 
+                                        IndexingTools::FileExplorer(
+                                            router[header->path],
+                                            IndexingTools::OpenMode::Text
+                                        );
+
+                                    //File iterator
+                                    IndexingTools::FileExplorer::FileExplorerIterator *it =
+                                        file.getIterator();
+
+                                    //Form response
+                                    resp = Response (
+                                        HTTP::MetaInfo::StatusCode::OK, 
+                                        file.getFileSizeInBytes(), 
+                                        server_conf.getSendingPacketSize(),
+                                        HTTP::MetaInfo::ContentType::textHTML,
+                                        it
+                                    );
+
+                                    if(IndexingTools::isHtmlFile(route))
+                                    {
+                                        //send response
+                                        //HTTP meta data
+                                        client_sockets[i]->sendDataThreaded(
+                                            resp.getHTTPmeta().c_str(),
+                                            resp.getHTTPmeta().length()
+                                        );
+                                        //head + body
+                                        std::string dataBite;
+                                        while(resp.nextDataPiece(dataBite))
+                                        {
+                                            client_sockets[i]->sendDataThreaded(
+                                                dataBite.c_str(),
+                                                resp.getResponseSize()
+                                            );
+                                        }
+                                    }
+                                    else
+                                    {
+                                        client_sockets[i]->sendDataThreaded(
+                                            resp.getHTTPmeta().c_str(),
+                                            resp.getHTTPmeta().length()
+                                        ); 
+                                    }
+                                }
+                                //is not a text file
+                                else
+                                {
+                                    IndexingTools::FileExplorer file = 
+                                        IndexingTools::FileExplorer(
+                                            router[header->path],
+                                            IndexingTools::OpenMode::Binary
+                                        );
+
+                                    IndexingTools::FileExplorer::FileExplorerIterator *it =
+                                        file.getIterator();
+                                }
+                            }
+                            else
+                            {
+                                resp = Response (
+                                    HTTP::MetaInfo::StatusCode::NotFound
+                                );
+                            }
+                        }
+                        else
+                        {
+                            resp = Response (
+                                HTTP::MetaInfo::StatusCode::NotImplemented
+                            );
+                        }
                     }
                 }
-                
-                if(!(*client_sockets[i]).isHaveRequests())
+                catch(...) 
                 {
-                    FD_CLR(i, &write_fds);
+                    resp = Response (
+                        HTTP::MetaInfo::StatusCode::InternalServerError
+                    ); 
+                    client_sockets[i]->sendDataThreaded(
+                        resp.getHTTPmeta().c_str(),
+                        resp.getHTTPmeta().length()
+                    ); 
                 }
+                //End of response logic
+            }
+            // All client requests satisfied
+            else if(FD_ISSET(i, &write_fds) && 
+                client_sockets[i]->isSocketEmpty())
+            {
+                FD_CLR(i, &write_fds);
             }
         }
     }
