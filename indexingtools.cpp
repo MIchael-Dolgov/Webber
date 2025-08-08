@@ -93,8 +93,9 @@ namespace IndexingTools
 
     bool FileExplorer::FileExplorerIterator::next(std::string& outline) noexcept(true)
     {
-        if (std::getline(data_stream, outline))
+        if (std::getline(data_stream, outline)) //this method remove \n in source
         {
+            outline += "\n"; //quickfix
             return true;
         }
         else
