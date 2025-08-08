@@ -2,7 +2,7 @@
 /page1 file_storage/page1.html
 /logo.png file_storage/logo.png
 /ola file_storage/ola.txt
-logo.png file_storage/logo.png
-styled.css file_storage/styled.css
 /styled.css file_storage/styled.css
 /styled file_storage/styled.html
+/scripted file_storage/scripted.html
+/script file_storage/script.js
