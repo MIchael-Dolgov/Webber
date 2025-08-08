@@ -5,4 +5,4 @@
 /styled.css file_storage/styled.css
 /styled file_storage/styled.html
 /scripted file_storage/scripted.html
-/script file_storage/script.js
+/script.js file_storage/script.js

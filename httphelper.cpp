@@ -349,7 +349,7 @@ namespace HTTP
             {
                 if (iterator->next(tmpStr))
                 {
-                    respBodyBuffer += tmpStr;
+                    respBodyBuffer += tmpStr + "\n";
                     tmpStr.clear();
                 }
             }

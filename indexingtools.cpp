@@ -30,13 +30,16 @@ namespace IndexingTools
         return false;
     }
 
-    bool isTextFile(const std::string& path)
+    //TODO: refactoring required
+    bool isTextFileFormat(const std::string& path)
     {
         std::string lowerPath = path;
         std::transform(lowerPath.begin(), lowerPath.end(), lowerPath.begin(), ::tolower);
 
+        //TODO: refactoring with enums or pattern matching required
         return hasEnding(lowerPath, ".css") ||
             hasEnding(lowerPath, ".html") ||
+            hasEnding(lowerPath, ".js") ||
             hasEnding(lowerPath, ".txt");
     }
 
@@ -95,7 +98,6 @@ namespace IndexingTools
     {
         if (std::getline(data_stream, outline)) //this method remove \n in source
         {
-            outline += "\n"; //quickfix
             return true;
         }
         else

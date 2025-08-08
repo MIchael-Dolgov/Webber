@@ -232,7 +232,7 @@ int main(int argc, char *argv[])
                             {
                                 std::string route = router[header->path];
                             
-                                if(IndexingTools::isTextFile(route))
+                                if(IndexingTools::isTextFileFormat(route))
                                 {
                                     //Prepare file
                                     IndexingTools::FileExplorer file = 
@@ -250,42 +250,28 @@ int main(int argc, char *argv[])
                                         HTTP::MetaInfo::StatusCode::OK, 
                                         file.getFileSizeInBytes(), 
                                         server_conf.getSendingPacketSize(),
-                                        HTTP::MetaInfo::ContentType::textHTML,
+                                        HTTP::MetaInfo::convertTextToContentType(
+                                            IndexingTools::getFileExtension(
+                                                router[header->path]
+                                            )
+                                        ),
                                         it
                                     );
 
-                                    if(IndexingTools::isHtmlFile(route))
+                                    //send response
+                                    //HTTP meta data
+                                    client_sockets[i]->sendDataThreaded(
+                                        resp.getHTTPmeta().c_str(),
+                                        resp.getHTTPmeta().length()
+                                    );
+                                    //head + body
+                                    std::string dataBite;
+                                    while(resp.nextDataPiece(dataBite))
                                     {
-                                        //send response
-                                        //HTTP meta data
                                         client_sockets[i]->sendDataThreaded(
-                                            resp.getHTTPmeta().c_str(),
-                                            resp.getHTTPmeta().length()
+                                            dataBite.c_str(),
+                                            resp.getResponseSize()
                                         );
-                                        //head + body
-                                        std::string dataBite;
-                                        while(resp.nextDataPiece(dataBite))
-                                        {
-                                            client_sockets[i]->sendDataThreaded(
-                                                dataBite.c_str(),
-                                                resp.getResponseSize()
-                                            );
-                                        }
-                                    }
-                                    else
-                                    {
-                                        client_sockets[i]->sendDataThreaded(
-                                            resp.getHTTPmeta().c_str(),
-                                            resp.getHTTPmeta().length()
-                                        ); 
-                                        std::string dataBite;
-                                        while(resp.nextDataPiece(dataBite))
-                                        {
-                                            client_sockets[i]->sendDataThreaded(
-                                                dataBite.c_str(),
-                                                resp.getResponseSize()
-                                            );
-                                        }
                                     }
                                 }
                                 //is not a text file
