@@ -5,9 +5,26 @@
 
 namespace IndexingTools
 {
+    std::string getFileExtension(const std::string filePath) 
+    {
+        size_t dotPos = filePath.find_last_of('.');
+    
+        size_t slashPos = filePath.find_last_of("/\\");
+
+        if (dotPos != std::string::npos && (slashPos == std::string::npos || dotPos > slashPos)) 
+        {
+            std::string ext = filePath.substr(dotPos);
+            std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+            return ext;
+        }
+    
+        return ""; //no extension
+    }
+
     bool hasEnding(const std::string& full, const std::string& ending)
     {
-        if (full.length() >= ending.length()) {
+        if (full.length() >= ending.length()) 
+        {
             return full.compare(full.length() - ending.length(), ending.length(), ending) == 0;
         }
         return false;

@@ -11,6 +11,8 @@
 
 namespace IndexingTools
 {
+    std::string getFileExtension(const std::string filePath);
+
     bool hasEnding(const std::string& full, const std::string& ending);
 
     bool isTextFile(const std::string& path);

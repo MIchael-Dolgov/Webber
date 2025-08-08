@@ -148,12 +148,14 @@ int main(int argc, char *argv[])
                     = new sockets::ClientSocketHandler(newfd_var,
                         (struct sockaddr&)remoteaddr);
                 // new connection terminal log
+                std::cout << "\e[1;36m";
                 std::cout << "new connection from " << 
                     client_sockets[newfd_var]->getIP() << "\n";
                 std::cout << "from port: " <<
                     client_sockets[newfd_var]->getPort() << "\n";
                 std::cout << "with fd: " << 
                     client_sockets[newfd_var]->getFd() << "\n";
+                std::cout << "\e[0;37m";
             }
 
             // Connected client is sending data
@@ -225,6 +227,7 @@ int main(int argc, char *argv[])
                         //===== Your response logic =====
                         if(header->method == "GET")
                         {
+                            //TODO: реализовать поддержку отправки фото и css
                             if(router.count(header->path) > 0)
                             {
                                 std::string route = router[header->path];
@@ -275,6 +278,14 @@ int main(int argc, char *argv[])
                                             resp.getHTTPmeta().c_str(),
                                             resp.getHTTPmeta().length()
                                         ); 
+                                        std::string dataBite;
+                                        while(resp.nextDataPiece(dataBite))
+                                        {
+                                            client_sockets[i]->sendDataThreaded(
+                                                dataBite.c_str(),
+                                                resp.getResponseSize()
+                                            );
+                                        }
                                     }
                                 }
                                 //is not a text file
@@ -288,12 +299,44 @@ int main(int argc, char *argv[])
 
                                     IndexingTools::FileExplorer::FileExplorerIterator *it =
                                         file.getIterator();
+
+                                    resp = Response (
+                                        HTTP::MetaInfo::StatusCode::OK,
+                                        file.getFileSizeInBytes(),
+                                        server_conf.getSendingPacketSize(),
+                                        HTTP::MetaInfo::convertTextToContentType(
+                                            IndexingTools::getFileExtension(
+                                                router[header->path]
+                                            )
+                                        ),
+                                        it
+                                    );
+                                    client_sockets[i]->sendDataThreaded(
+                                        resp.getHTTPmeta().c_str(),
+                                        resp.getHTTPmeta().length()
+                                    );
+
+                                    std::vector<char> buffer(
+                                        server_conf.getSendingPacketSize());
+
+                                    while(it->nextBytes(buffer, 
+                                        server_conf.getSendingPacketSize()))
+                                    {
+                                        client_sockets[i]->sendDataThreaded(
+                                            &buffer,
+                                            buffer.size()
+                                        );
+                                    }
                                 }
                             }
                             else
                             {
                                 resp = Response (
                                     HTTP::MetaInfo::StatusCode::NotFound
+                                );
+                                client_sockets[i]->sendDataThreaded(
+                                    resp.getHTTPmeta().c_str(),
+                                    resp.getHTTPmeta().length()
                                 );
                             }
                         }
@@ -302,20 +345,31 @@ int main(int argc, char *argv[])
                             resp = Response (
                                 HTTP::MetaInfo::StatusCode::NotImplemented
                             );
+                            client_sockets[i]->sendDataThreaded(
+                                resp.getHTTPmeta().c_str(),
+                                resp.getHTTPmeta().length()
+                            );
                         }
                     }
                 }
-                catch(...) 
+                catch(const std::exception& err) 
                 {
+                    std::cerr << "\e[0;31m";
+                    std::cerr << "Internal server error: " 
+                        << err.what() << "\n";
+
                     resp = Response (
                         HTTP::MetaInfo::StatusCode::InternalServerError
-                    ); 
+                    );
                     client_sockets[i]->sendDataThreaded(
                         resp.getHTTPmeta().c_str(),
                         resp.getHTTPmeta().length()
-                    ); 
+                    );
                 }
                 //End of response logic
+                std::cout << "\e[0;33m";
+                std::cout << "response has been send." << "\n";
+                std::cout << "\e[0;37m";
             }
             // All client requests satisfied
             else if(FD_ISSET(i, &write_fds) && 

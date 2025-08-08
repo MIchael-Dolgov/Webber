@@ -11,7 +11,7 @@
 #include <memory>
 
 #define HTTP_MAX_SOCKET_REQUESTS_CAPACITY 10u
-#define DEFAULT_HTTP_REQUEST_SIZE 512u
+#define DEFAULT_HTTP_REQUEST_SIZE 1024u
 #define FAILED -1
 
 namespace sockets
@@ -320,14 +320,15 @@ namespace sockets
             return res;
         }
 
-        void sendData(const char* data, size_t len)
+        void sendData(const void* data, size_t len)
         {
             int total = 0;
             size_t bytesleft = len;
             int n;
             while(total < len)
             {
-                n = send(this->socket_fd, data+total, bytesleft, 0);
+                //TODO: generalize cast (char*) with templates!!!
+                n = send(this->socket_fd, (char*)data+total, bytesleft, 0);
                 if (n==-1) {break;}
                 total += n;
                 bytesleft -= n;
@@ -376,7 +377,6 @@ namespace sockets
             buffer->write_pos = 0;
             buffer->read_pos = 0;
             buffer->placed = 0;
-            buffer->size = 0;
             for(int i = 0; 
                 i < sizeof(buffer->raw_data_sequence)/sizeof(char); i++)
             {
@@ -396,7 +396,7 @@ namespace sockets
             return proceedIncomeSocketData();
         }
 
-        void sendDataThreaded(const char *data, size_t len)
+        void sendDataThreaded(const void *data, size_t len)
         {
             sendData(data, len);
         }

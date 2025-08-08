@@ -26,6 +26,7 @@ private:
         "-t     max working threads limit\n"
         "-c     set max connections limit\n"
         "-r     set specific file routes location\n"
+        "s      set max sending packet size\n"
         "";
 
     //class methods
