@@ -5,21 +5,41 @@
 
 namespace IndexingTools
 {
+    std::string getFileExtension(const std::string filePath) 
+    {
+        size_t dotPos = filePath.find_last_of('.');
+    
+        size_t slashPos = filePath.find_last_of("/\\");
+
+        if (dotPos != std::string::npos && (slashPos == std::string::npos || dotPos > slashPos)) 
+        {
+            std::string ext = filePath.substr(dotPos);
+            std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+            return ext;
+        }
+    
+        return ""; //no extension
+    }
+
     bool hasEnding(const std::string& full, const std::string& ending)
     {
-        if (full.length() >= ending.length()) {
+        if (full.length() >= ending.length()) 
+        {
             return full.compare(full.length() - ending.length(), ending.length(), ending) == 0;
         }
         return false;
     }
 
-    bool isTextFile(const std::string& path)
+    //TODO: refactoring required
+    bool isTextFileFormat(const std::string& path)
     {
         std::string lowerPath = path;
         std::transform(lowerPath.begin(), lowerPath.end(), lowerPath.begin(), ::tolower);
 
+        //TODO: refactoring with enums or pattern matching required
         return hasEnding(lowerPath, ".css") ||
             hasEnding(lowerPath, ".html") ||
+            hasEnding(lowerPath, ".js") ||
             hasEnding(lowerPath, ".txt");
     }
 
@@ -76,7 +96,11 @@ namespace IndexingTools
 
     bool FileExplorer::FileExplorerIterator::next(std::string& outline) noexcept(true)
     {
-        if (std::getline(data_stream, outline))
+        if (this->isBinaryMode())
+        {
+            throw std::runtime_error("iterator has been opened in binary mode");
+        }
+        if (std::getline(data_stream, outline)) //this method remove \n in source
         {
             return true;
         }
@@ -96,15 +120,25 @@ namespace IndexingTools
     bool FileExplorer::FileExplorerIterator::nextBytes(
         std::vector<char>& buffer, size_t count)
     {
-        if(this->mode == OpenMode::Text)
+        if (this->mode == OpenMode::Text)
         {
-            return 0;
+            return false;
+        }
+        if (eof_reached)
+        {
+            return false;
         }
 
-        buffer.resize(count);
+        if(buffer.capacity() < count)
+        {
+            buffer.resize(count);
+        }
+    
         data_stream.read(buffer.data(), count);
+
         std::size_t bytesRead = data_stream.gcount();
-        buffer.resize(bytesRead); // cut if less
+
+        buffer.resize(bytesRead);
 
         eof_reached = data_stream.eof();
 

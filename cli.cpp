@@ -10,7 +10,35 @@
 #define DEFAULT_PAGES_ROUTES_INDEXING_FILE_LOCATION "routes.txt"
 #define DEFAULT_SENDING_PACKET_SIZE_IN_CHARS 1024u
 
-// Global webserver condition
+// ===Pretty instruments===
+namespace CliTools
+{
+    class ConsoleColor {
+    public:
+        enum class Color {
+            Default = 37,  // стандартный цвет
+            Red = 31,
+            Green = 32,
+            Yellow = 33,
+            Blue = 34,
+            Magenta = 35,
+            Cyan = 36
+        };
+
+        static std::string getAnsiCode(Color color) {
+            return std::string("\e[0;") + 
+                std::to_string(static_cast<int>(color)) + "m";
+        }
+    };
+
+    void printColoredMessage(std::ostream& out, const std::string& message, ConsoleColor::Color color)
+    {
+        out << ConsoleColor::getAnsiCode(color) << message << "\n"
+            << ConsoleColor::getAnsiCode(ConsoleColor::Color::Default);
+    }
+}
+
+// ===Global webserver condition===
 class WebCliConfig
 {
 private:
@@ -26,6 +54,7 @@ private:
         "-t     max working threads limit\n"
         "-c     set max connections limit\n"
         "-r     set specific file routes location\n"
+        "s      set max sending packet size\n"
         "";
 
     //class methods

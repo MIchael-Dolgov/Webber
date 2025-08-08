@@ -11,7 +11,7 @@
 #include <memory>
 
 #define HTTP_MAX_SOCKET_REQUESTS_CAPACITY 10u
-#define DEFAULT_HTTP_REQUEST_SIZE 512u
+#define DEFAULT_HTTP_REQUEST_SIZE 1024u
 #define FAILED -1
 
 namespace sockets
@@ -130,6 +130,9 @@ namespace sockets
         }
 
     public:
+        std::string getListenerPort() noexcept(true) {return listener_port_;}
+        std::string getListenerHost() noexcept(true) {return listener_host_;}
+
         static SocketListener &instance() noexcept(true)
         {
             static SocketListener single_instance;
@@ -165,7 +168,7 @@ namespace sockets
         }
 
         // request to open list sock from Linux Kernel
-        void startListen()
+        bool startListen()
         {
             initialize();
             if (listen(listener_fd_, conns_amount_) == FAILED)
@@ -174,14 +177,7 @@ namespace sockets
                 close(listener_fd_);
                 throw std::runtime_error("failed to open");
             }
-
-            // success
-            std::cout << "\033[1;32m";
-            std::cout << "=====   Success!   =====" << "\n";
-            std::cout << "Web server is listening port: " 
-                << listener_port_ << " " << "On ip: " << listener_host_ << "\n";
-            std::cout << "========================" << "\n";
-            std::cout << "\033[0m";
+            return true;
         }
     };
     // basic non initialized values for SocketListener
@@ -320,14 +316,15 @@ namespace sockets
             return res;
         }
 
-        void sendData(const char* data, size_t len)
+        void sendData(const void* data, size_t len)
         {
-            int total = 0;
+            size_t total = 0;
             size_t bytesleft = len;
-            int n;
+            size_t n;
             while(total < len)
             {
-                n = send(this->socket_fd, data+total, bytesleft, 0);
+                //TODO: generalize cast (char*) with templates!!!
+                n = send(this->socket_fd, (char*)data+total, bytesleft, 0);
                 if (n==-1) {break;}
                 total += n;
                 bytesleft -= n;
@@ -376,7 +373,6 @@ namespace sockets
             buffer->write_pos = 0;
             buffer->read_pos = 0;
             buffer->placed = 0;
-            buffer->size = 0;
             for(int i = 0; 
                 i < sizeof(buffer->raw_data_sequence)/sizeof(char); i++)
             {
@@ -396,7 +392,7 @@ namespace sockets
             return proceedIncomeSocketData();
         }
 
-        void sendDataThreaded(const char *data, size_t len)
+        void sendDataThreaded(const void *data, size_t len) noexcept(false)
         {
             sendData(data, len);
         }

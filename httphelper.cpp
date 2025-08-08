@@ -90,9 +90,11 @@ namespace HTTP
 
         enum class ContentType : int
         {
+            noType,
             textHTML,
             textTXT,
             textCSS,
+            appJson,
             imagePNG,
         };
 
@@ -100,12 +102,54 @@ namespace HTTP
         {
             switch(content)
             {
+                case ContentType::noType: return "application/octet-stream";
                 case ContentType::textHTML: return "text/html";
                 case ContentType::textTXT: return "text/txt";
                 case ContentType::textCSS: return "text/css";
+                case ContentType::appJson: return "application/json";
                 case ContentType::imagePNG: return "image/png";
 
                 default: throw std::runtime_error("unknown type of content");
+            }
+        }
+
+        ContentType convertTextToContentType(std::string fileExtension)
+            noexcept(true) 
+        {
+            // transform extension to lower chars
+            std::transform(fileExtension.begin(), fileExtension.end(), fileExtension.begin(),
+                        [](unsigned char c) { return std::tolower(c); });
+
+            // removing fullstop
+            if (!fileExtension.empty() && fileExtension[0] == '.') 
+            {
+                fileExtension.erase(0, 1);
+            }
+
+            // convert to Enum
+            if (fileExtension == "html" || fileExtension == "htm") 
+            {
+                return ContentType::textHTML;
+            }
+            else if (fileExtension == "txt") 
+            {
+                return ContentType::textTXT;
+            }
+            else if (fileExtension == "css") 
+            {
+                return ContentType::textCSS;
+            }
+            else if (fileExtension == "json") 
+            {
+                return ContentType::appJson;
+            }
+            else if (fileExtension == "png") 
+            {
+                return ContentType::imagePNG;
+            }
+            else 
+            {
+                return ContentType::noType;
             }
         }
     }
@@ -210,7 +254,8 @@ namespace HTTP
                     this->body_extracted = true;
                 }
                 i += 1;
-            }            this->request_char_len = this->header.length() 
+            }            
+            this->request_char_len = this->header.length() 
                 + this->body.length();
             if(this->isHaveBody && !this->body_extracted) {return FAIL;}
             return SUCCESS;
@@ -248,9 +293,11 @@ namespace HTTP
         }
         Response(MetaInfo::StatusCode code)
         {
+                this->dataLen = 0;
                 HTTPmeta = "HTTP/1.1 "
                 + std::to_string(static_cast<int>(code)) + " " 
                 + MetaInfo::statusMessage(code) + "\r\n"
+                + "Content-Length: " + std::to_string(this->dataLen) + "\r\n"
                 "\r\n"; 
         }
         Response(MetaInfo::StatusCode code, size_t contentLength, 
@@ -266,6 +313,7 @@ namespace HTTP
                 + "Content-Length: " + std::to_string(contentLength) + "\r\n"
                 "\r\n";
         }
+        //TODO: gzip compressing encoding refactoring
         Response(MetaInfo::StatusCode code, size_t contentLength, 
             size_t bufferSize, MetaInfo::ContentType type, IIterator* iterator)
         {
@@ -284,8 +332,6 @@ namespace HTTP
             tmpStr = "";
         }
 
-        std::string currBufferData() noexcept(true) {return respBodyBuffer;}
-
         bool isCurrEOF() noexcept(true) {return this->eof();}
 
         // Creates data pieces only with bufferSize length or smaller 
@@ -302,7 +348,7 @@ namespace HTTP
             {
                 if (iterator->next(tmpStr))
                 {
-                    respBodyBuffer += tmpStr;
+                    respBodyBuffer += tmpStr + "\n";
                     tmpStr.clear();
                 }
             }
@@ -333,7 +379,6 @@ namespace HTTP
         }
     };
 
-    //TODO: implement deserializers
     class DeserializedHeader 
     {
     public:
