@@ -15,6 +15,8 @@ int main(int argc, char *argv[])
     using HTTP::Request;
     using HTTP::Response;
     using HTTP::DeserializedHeader;
+    using CliTools::printColoredMessage;
+    using CliTools::ConsoleColor;
     //args initialization
     WebCliConfig &server_conf = WebCliConfig::instance();
     if(argc >= 2 && (string)argv[FIRST_USER_FLAG] == "--help")
@@ -66,8 +68,11 @@ int main(int argc, char *argv[])
     }
     catch (const std::exception& err)
     {
-        std::cerr << "\e[0;31m";
-        std::cerr << "Indexing failed: " << err.what() << "\n";
+        printColoredMessage(
+            std::cout,
+            "Indexing failed: " + std::string(err.what()) + "\n", 
+            ConsoleColor::Color::Red
+        );
         return EXIT_FAILURE;
     }
     //init all networking entities for http workflow
@@ -77,7 +82,18 @@ int main(int argc, char *argv[])
     {
         main_web_gate.configure(server_conf.getMaxConns(), server_conf.getIP(),
             server_conf.getPort()); 
-        main_web_gate.startListen(); 
+        if(main_web_gate.startListen())
+        {
+            printColoredMessage(
+                std::cout, 
+                std::string("=====   Success!   =====") + "\n" +
+                std::string("Web server is listening port: ") +
+                main_web_gate.getListenerPort() + " " +
+                std::string("On ip: ") + main_web_gate.getListenerHost() + "\n" +
+                std::string("========================"),
+                ConsoleColor::Color::Green
+            );
+        }
     }
     catch(const std::exception& err)
     {
@@ -115,7 +131,11 @@ int main(int argc, char *argv[])
             &write_fds, NULL, NULL);
         if(read_write_except_event_status == -1) 
         {
-            std::cerr << "selector issue";
+            printColoredMessage(
+                std::cout,
+                "selector issue", 
+                ConsoleColor::Color::Red
+            );
             return EXIT_FAILURE;
         }
         //check IO events
@@ -135,8 +155,11 @@ int main(int argc, char *argv[])
                     &addrlen);
                 if (newfd_var == -1) 
                 {
-                    std::cerr << "New TCP connection failed. Refusing..." 
-                        << "\n";
+                    printColoredMessage(
+                        std::cout,
+                        "New TCP connection failed. Refusing...", 
+                        ConsoleColor::Color::Yellow
+                    );
                     continue;
                 }
                 FD_SET(newfd_var, &master);
@@ -148,14 +171,14 @@ int main(int argc, char *argv[])
                     = new sockets::ClientSocketHandler(newfd_var,
                         (struct sockaddr&)remoteaddr);
                 // new connection terminal log
-                std::cout << "\e[1;36m";
-                std::cout << "new connection from " << 
-                    client_sockets[newfd_var]->getIP() << "\n";
-                std::cout << "from port: " <<
-                    client_sockets[newfd_var]->getPort() << "\n";
-                std::cout << "with fd: " << 
-                    client_sockets[newfd_var]->getFd() << "\n";
-                std::cout << "\e[0;37m";
+                printColoredMessage(
+                    std::cout, 
+                    "new connection from " +
+                    client_sockets[newfd_var]->getIP() + "\n" + 
+                    std::to_string(client_sockets[newfd_var]->getPort()) + "\n" +
+                    std::to_string(client_sockets[newfd_var]->getFd()), 
+                    ConsoleColor::Color::Blue
+                );
             }
 
             // Connected client is sending data
@@ -302,15 +325,35 @@ int main(int argc, char *argv[])
                                         resp.getHTTPmeta().length()
                                     );
 
+                                    try
+                                    {
                                     std::vector<char> buffer(
                                         server_conf.getSendingPacketSize());
 
-                                    while(it->nextBytes(buffer, 
-                                        server_conf.getSendingPacketSize()))
+                                    while (it->nextBytes(buffer, buffer.size()))
+                                        {
+                                            client_sockets[i]->sendDataThreaded(
+                                                buffer.data(),
+                                                buffer.size()
+                                            );
+                                        }
+                                    }
+                                    catch(const std::exception& err)
                                     {
+                                        printColoredMessage(
+                                            std::cerr,
+                                            std::string(err.what()), 
+                                            ConsoleColor::Color::Yellow
+                                        );
+
+                                        resp = Response (
+                                            HTTP::MetaInfo::
+                                                StatusCode::InternalServerError
+                                        );
+
                                         client_sockets[i]->sendDataThreaded(
-                                            &buffer,
-                                            buffer.size()
+                                            resp.getHTTPmeta().c_str(),
+                                            resp.getHTTPmeta().length()
                                         );
                                     }
                                 }
@@ -340,9 +383,11 @@ int main(int argc, char *argv[])
                 }
                 catch(const std::exception& err) 
                 {
-                    std::cerr << "\e[0;31m";
-                    std::cerr << "Internal server error: " 
-                        << err.what() << "\n";
+                    printColoredMessage(
+                        std::cout, 
+                        "Internal server error: " + std::string(err.what()), 
+                        ConsoleColor::Color::Red
+                    );
 
                     resp = Response (
                         HTTP::MetaInfo::StatusCode::InternalServerError
@@ -353,9 +398,11 @@ int main(int argc, char *argv[])
                     );
                 }
                 //End of response logic
-                std::cout << "\e[0;33m";
-                std::cout << "response has been send." << "\n";
-                std::cout << "\e[0;37m";
+                printColoredMessage(
+                    std::cout, 
+                    "response has been sent.", 
+                    ConsoleColor::Color::Green
+                );
             }
             // All client requests satisfied
             else if(FD_ISSET(i, &write_fds) && 

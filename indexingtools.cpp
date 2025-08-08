@@ -96,6 +96,10 @@ namespace IndexingTools
 
     bool FileExplorer::FileExplorerIterator::next(std::string& outline) noexcept(true)
     {
+        if (this->isBinaryMode())
+        {
+            throw std::runtime_error("iterator has been opened in binary mode");
+        }
         if (std::getline(data_stream, outline)) //this method remove \n in source
         {
             return true;
@@ -116,15 +120,25 @@ namespace IndexingTools
     bool FileExplorer::FileExplorerIterator::nextBytes(
         std::vector<char>& buffer, size_t count)
     {
-        if(this->mode == OpenMode::Text)
+        if (this->mode == OpenMode::Text)
         {
-            return 0;
+            return false;
+        }
+        if (eof_reached)
+        {
+            return false;
         }
 
-        buffer.resize(count);
+        if(buffer.capacity() < count)
+        {
+            buffer.resize(count);
+        }
+    
         data_stream.read(buffer.data(), count);
+
         std::size_t bytesRead = data_stream.gcount();
-        buffer.resize(bytesRead); // cut if less
+
+        buffer.resize(bytesRead);
 
         eof_reached = data_stream.eof();
 

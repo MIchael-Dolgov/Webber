@@ -313,6 +313,7 @@ namespace HTTP
                 + "Content-Length: " + std::to_string(contentLength) + "\r\n"
                 "\r\n";
         }
+        //TODO: gzip compressing encoding refactoring
         Response(MetaInfo::StatusCode code, size_t contentLength, 
             size_t bufferSize, MetaInfo::ContentType type, IIterator* iterator)
         {
@@ -330,8 +331,6 @@ namespace HTTP
             respBodyBuffer = "";
             tmpStr = "";
         }
-
-        std::string currBufferData() noexcept(true) {return respBodyBuffer;}
 
         bool isCurrEOF() noexcept(true) {return this->eof();}
 
