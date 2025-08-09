@@ -433,6 +433,7 @@ int main(int argc, char *argv[])
                 FD_CLR(i, &write_fds);
             }
             //closing connection for abandoned sockets
+            /*
             if(i != listener_fd && FD_ISSET(i, &master))
             {
                 auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -454,6 +455,7 @@ int main(int argc, char *argv[])
                     FD_CLR(i, &write_fds);
                 }
             }
+            */
         }
     }
 
