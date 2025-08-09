@@ -4,5 +4,15 @@
 /ola file_storage/ola.txt
 /styled.css file_storage/styled.css
 /styled file_storage/styled.html
-/scripted file_storage/scripted.html
+asdklfjadksljf
+
+fj jf ds
+testtest
+# adsklfjadsfljdsfkl
+/scripted file_storage/scripted.html #alsdfjlaks
 /script.js file_storage/script.js
+
+#===== My Landing Page in landing folder =====#
+/landing file_storage/landing.html
+/landing/styles.css file_storage/landing/styles.css
+/landing/script.js file_storage/landing/script.js

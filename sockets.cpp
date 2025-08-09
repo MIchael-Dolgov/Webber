@@ -9,6 +9,7 @@
 #include <netdb.h>
 #include <cstring>
 #include <memory>
+#include <chrono>
 
 #define HTTP_MAX_SOCKET_REQUESTS_CAPACITY 10u
 #define DEFAULT_HTTP_REQUEST_SIZE 1024u
@@ -184,14 +185,15 @@ namespace sockets
     struct addrinfo sockets::SocketListener::hints = {};
     bool sockets::SocketListener::configured_ = false;
     bool sockets::SocketListener::opened_ = false;
-    int sockets::SocketListener::listener_fd_ = FAILED;
+    int sockets::SocketListener::listener_fd_ = FAILED;  
     uint sockets::SocketListener::conns_amount_ = 0;
     std::string sockets::SocketListener::listener_host_;
     std::string sockets::SocketListener::listener_port_;
 
     /*
      * Client sockets handler
-     */
+    */
+   //TODO: if connection too long, close connection
     class ClientSocketHandler
     {
     private:
@@ -286,6 +288,8 @@ namespace sockets
         std::string client_ip;
         sockaddr socket_info;
         RawDataCycledBuffer *buffer = nullptr;
+        std::chrono::steady_clock::time_point socket_opened_time_;
+        std::chrono::steady_clock::time_point last_socket_conversation_;
 
         // TCP/IP data manipulations
         ssize_t proceedIncomeSocketData() noexcept(true)
@@ -335,12 +339,14 @@ namespace sockets
     public:
         ClientSocketHandler(int sockfd, struct sockaddr sa)
         {
-            socket_fd = sockfd;
-            client_port = get_in_port(&sa);
-            isIPv6 = is_IPv6(&sa);
-            client_ip = get_printable_ip(&sa);
-            socket_info = sa;
-            buffer = RawDataCycledBuffer::InitBuffer();
+            this->socket_fd = sockfd;
+            this->client_port = get_in_port(&sa);
+            this->isIPv6 = is_IPv6(&sa);
+            this->client_ip = get_printable_ip(&sa);
+            this->socket_info = sa;
+            this->buffer = RawDataCycledBuffer::InitBuffer();
+            this->socket_opened_time_ = std::chrono::steady_clock::now();
+            this->last_socket_conversation_ = this->socket_opened_time_;
         }
         // ClientSocketHandler(const ClientSocketHandler&) = default;
         // ClientSocketHandler& operator=(const ClientSocketHandler&) = default;
@@ -348,13 +354,28 @@ namespace sockets
         {
         }
 
+        //get vars info
         std::string getIP() { return client_ip; }
         uint getPort() { return client_port; }
         int getFd() { return socket_fd; }
+        std::chrono::steady_clock::time_point getOpenedTime() 
+        {
+            return socket_opened_time_;
+        }
+        std::chrono::steady_clock::time_point getLastConversation() 
+        {
+            return last_socket_conversation_;
+        }
+        void refreshLastSocketConversation() noexcept(true)
+        {
+            last_socket_conversation_ = std::chrono::steady_clock::now();
+        }
 
         //Buffer tools
-        bool isSocketEmpty() {return (buffer->placed == 0) && buffer->read_pos
-            == buffer->write_pos;}
+        bool isSocketEmpty() 
+        {
+            return (buffer->placed == 0) && (buffer->read_pos == buffer->write_pos);
+        }
 
         void freeUpBufferSpace(size_t size) noexcept(true)
         {

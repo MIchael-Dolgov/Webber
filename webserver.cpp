@@ -1,11 +1,13 @@
 #include <iostream>
 #include <unordered_map>
 #include <filesystem>
+#include <chrono>
 
 #include "cli.cpp"
 #include "sockets.cpp"
 #include "httphelper.cpp"
 #include "indexingtools.hpp"
+#include "stringtools.hpp"
 
 #define FIRST_USER_FLAG 1
 
@@ -49,16 +51,34 @@ int main(int argc, char *argv[])
             routesExplorer.getIterator();
         while(iter->next(output))
         {
+            // ignore comments on routes page
+            size_t pos = output.find('#');
+            if(!(pos == std::string::npos)) {output.erase(pos);}
+            trim(output);
+            if(output.length() == 0) {continue;} //comment line in file
             int space_pos = output.find(' ');
-            if (space_pos != std::string::npos) 
+            // Try parse by route rule
+            if(space_pos == std::string::npos) 
             {
-                std::string first = output.substr(0, space_pos);
-                std::string second = output.substr(space_pos + 1);
-                router[first] = second;
+                std::cerr << "Space has not been found for: "
+                    << output << " skipping line." << "\n";
             } 
             else 
             {
-                std::cerr << "invalid route: " << output << "skipping line.";
+                std::string first = output.substr(0, space_pos);
+                std::string second = output.substr(space_pos + 1);
+                trim(first);
+                trim(second);
+                if(!first.empty() && countChar(first, ' ') == 0
+                    && !second.empty() && countChar(second, ' ') == 0)
+                {
+                    router[first] = second;
+                }
+                else 
+                {
+                    std::cerr << "invalid route: " 
+                        << output << " " << "skipping line." << "\n";
+                }
             }
         }
         if (!iter->isEnd())
@@ -160,8 +180,8 @@ int main(int argc, char *argv[])
                         "New TCP connection failed. Refusing...", 
                         ConsoleColor::Color::Yellow
                     );
-                    continue;
                 }
+                
                 FD_SET(newfd_var, &master);
                 if (newfd_var > fdmax)
                 {
@@ -175,7 +195,9 @@ int main(int argc, char *argv[])
                     std::cout, 
                     "new connection from " +
                     client_sockets[newfd_var]->getIP() + "\n" + 
+                    "Port: " + 
                     std::to_string(client_sockets[newfd_var]->getPort()) + "\n" +
+                    "Fd: " +
                     std::to_string(client_sockets[newfd_var]->getFd()), 
                     ConsoleColor::Color::Blue
                 );
@@ -184,7 +206,6 @@ int main(int argc, char *argv[])
             // Connected client is sending data
             else if (i != listener_fd && FD_ISSET(i, &read_fds))
             {
-
                 nbytes = client_sockets[i]->proceedIncomeSocketDataThreaded();
                 if(nbytes <= 0)
                 {
@@ -214,12 +235,13 @@ int main(int argc, char *argv[])
                     //Next processing round
                     FD_SET(i, &write_fds);
                 }
+                client_sockets[i]->refreshLastSocketConversation();
             }
-
+            
             else if (i != listener_fd && FD_ISSET(i, &write_fds) && 
                 !(client_sockets[i]->isSocketEmpty()))
             {
-                //TODO: отрефакторить точку отправки Response. (мультиплексор)
+                //TODO: отрефакторить точку отправки Response.
                 Response resp;
                 try
                 {
@@ -250,7 +272,6 @@ int main(int argc, char *argv[])
                         //===== Your response logic =====
                         if(header->method == "GET")
                         {
-                            //TODO: реализовать поддержку отправки фото и css
                             if(router.count(header->path) > 0)
                             {
                                 std::string route = router[header->path];
@@ -260,7 +281,7 @@ int main(int argc, char *argv[])
                                     //Prepare file
                                     IndexingTools::FileExplorer file = 
                                         IndexingTools::FileExplorer(
-                                            router[header->path],
+                                            route,
                                             IndexingTools::OpenMode::Text
                                         );
 
@@ -275,7 +296,7 @@ int main(int argc, char *argv[])
                                         server_conf.getSendingPacketSize(),
                                         HTTP::MetaInfo::convertTextToContentType(
                                             IndexingTools::getFileExtension(
-                                                router[header->path]
+                                                route
                                             )
                                         ),
                                         it
@@ -302,7 +323,7 @@ int main(int argc, char *argv[])
                                 {
                                     IndexingTools::FileExplorer file = 
                                         IndexingTools::FileExplorer(
-                                            router[header->path],
+                                            route,
                                             IndexingTools::OpenMode::Binary
                                         );
 
@@ -315,7 +336,7 @@ int main(int argc, char *argv[])
                                         server_conf.getSendingPacketSize(),
                                         HTTP::MetaInfo::convertTextToContentType(
                                             IndexingTools::getFileExtension(
-                                                router[header->path]
+                                                route
                                             )
                                         ),
                                         it
@@ -403,12 +424,35 @@ int main(int argc, char *argv[])
                     "response has been sent.", 
                     ConsoleColor::Color::Green
                 );
+                client_sockets[i]->refreshLastSocketConversation();
             }
             // All client requests satisfied
             else if(FD_ISSET(i, &write_fds) && 
                 client_sockets[i]->isSocketEmpty())
             {
                 FD_CLR(i, &write_fds);
+            }
+            //closing connection for abandoned sockets
+            if(i != listener_fd && FD_ISSET(i, &master))
+            {
+                auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now() - client_sockets[i]->getLastConversation()
+                ).count();
+                if(elapsed > server_conf.getAbandonedSocketTimeout())
+                {
+                    printColoredMessage(
+                        std::cout, 
+                        "Connection closed " +
+                        client_sockets[newfd_var]->getIP() + "\n" + 
+                        std::to_string(client_sockets[i]->getPort()) + "\n" +
+                        std::to_string(client_sockets[i]->getFd()), 
+                        ConsoleColor::Color::Yellow
+                    ); 
+                    delete client_sockets[i];
+                    client_sockets.erase(i);
+                    FD_CLR(i, &master);
+                    FD_CLR(i, &write_fds);
+                }
             }
         }
     }

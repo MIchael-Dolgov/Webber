@@ -1,8 +1,5 @@
 #include "indexingtools.hpp"
 
-#include <stdexcept>
-#include <iostream>
-
 namespace IndexingTools
 {
     std::string getFileExtension(const std::string filePath) 
@@ -11,7 +8,8 @@ namespace IndexingTools
     
         size_t slashPos = filePath.find_last_of("/\\");
 
-        if (dotPos != std::string::npos && (slashPos == std::string::npos || dotPos > slashPos)) 
+        if (dotPos != std::string::npos && 
+            (slashPos == std::string::npos || dotPos > slashPos)) 
         {
             std::string ext = filePath.substr(dotPos);
             std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
@@ -25,7 +23,8 @@ namespace IndexingTools
     {
         if (full.length() >= ending.length()) 
         {
-            return full.compare(full.length() - ending.length(), ending.length(), ending) == 0;
+            return full.compare(full.length() 
+                - ending.length(), ending.length(), ending) == 0;
         }
         return false;
     }
@@ -34,7 +33,12 @@ namespace IndexingTools
     bool isTextFileFormat(const std::string& path)
     {
         std::string lowerPath = path;
-        std::transform(lowerPath.begin(), lowerPath.end(), lowerPath.begin(), ::tolower);
+        std::transform(
+            lowerPath.begin(), 
+            lowerPath.end(), 
+            lowerPath.begin(), 
+            ::tolower
+        );
 
         //TODO: refactoring with enums or pattern matching required
         return hasEnding(lowerPath, ".css") ||
@@ -43,22 +47,18 @@ namespace IndexingTools
             hasEnding(lowerPath, ".txt");
     }
 
-    bool isHtmlFile(const std::string& path)
-    {
-        std::string lowerPath = path;
-        std::transform(lowerPath.begin(), lowerPath.end(), lowerPath.begin(), ::tolower);
-
-        return hasEnding(lowerPath, ".html") ||
-            hasEnding(lowerPath, ".htm");
-    }
-
     // === FileExplorer ===
     FileExplorer::FileExplorer(const std::filesystem::path& path,
         OpenMode mode) : file_path(path)
     {
-        if (stat(path.c_str(), &file_info) == -1)
+        if (!std::filesystem::exists(path)) 
         {
-            throw std::runtime_error("Failed to extract file info");
+            throw std::runtime_error("File not found: " + path.string());
+        }
+        if (stat(path.string().c_str(), &file_info) == -1) 
+        {
+            throw std::runtime_error("Failed to extract file info for path: " 
+                + path.string());
         }
 
         iterator = new FileExplorerIterator(file_path, mode);
@@ -94,7 +94,8 @@ namespace IndexingTools
         }
     }
 
-    bool FileExplorer::FileExplorerIterator::next(std::string& outline) noexcept(true)
+    bool FileExplorer::FileExplorerIterator
+        ::next(std::string& outline) noexcept(true)
     {
         if (this->isBinaryMode())
         {
