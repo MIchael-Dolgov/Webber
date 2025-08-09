@@ -6,6 +6,8 @@
 #include <sys/stat.h>
 #include <vector>
 #include <algorithm>
+#include <stdexcept>
+#include <iostream>
 
 #include "interfaces.hpp"
 

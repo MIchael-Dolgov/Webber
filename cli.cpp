@@ -9,6 +9,7 @@
 //#define DEFAULT_REQUEST_LENGTH 1024u
 #define DEFAULT_PAGES_ROUTES_INDEXING_FILE_LOCATION "routes.txt"
 #define DEFAULT_SENDING_PACKET_SIZE_IN_CHARS 1024u
+#define DEFAULT_ABANDONED_SOCKET_TIMEOUT 20000UL
 
 // ===Pretty instruments===
 namespace CliTools
@@ -55,6 +56,7 @@ private:
         "-c     set max connections limit\n"
         "-r     set specific file routes location\n"
         "s      set max sending packet size\n"
+        "-tt    set timeout for abandoned sockets in milliseconds\n"
         "";
 
     //class methods
@@ -69,6 +71,7 @@ private:
     uint max_connections = CONNS_AMOUNT;
     std::string routes = DEFAULT_PAGES_ROUTES_INDEXING_FILE_LOCATION;
     size_t sending_packet_size = DEFAULT_SENDING_PACKET_SIZE_IN_CHARS;
+    long unsigned milliseconds_aband_sock_timeout = DEFAULT_ABANDONED_SOCKET_TIMEOUT;
 
     bool created = false;
 
@@ -92,6 +95,10 @@ public:
     uint getMaxConns() noexcept(true) {return max_connections;}
     std::string getRoutesFile() noexcept(true) {return routes;}
     size_t getSendingPacketSize() noexcept(true) {return sending_packet_size;}
+    long unsigned getAbandonedSocketTimeout() noexcept(true)
+    {
+        return milliseconds_aband_sock_timeout;
+    }
 
     void setParam(const std::string& key, const std::string& value)
     {
